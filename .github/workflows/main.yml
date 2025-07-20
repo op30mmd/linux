@@ -6,7 +6,7 @@ on:
       fork_owner:
         description: 'Your GitHub username or organization that owns the fork'
         required: true
-        default: 'torvalds' # The default upstream kernel repository owner
+        default: 'op30mmd' # The default upstream kernel repository owner
       branch_name:
         description: 'The branch to build from your fork'
         required: true
@@ -19,10 +19,8 @@ jobs:
     steps:
       - name: Install Build Dependencies
         run: |
-          # CORRECTED: Replaced libdw-devel with the correct provider package 'elfutils-devel'.
           # Install all necessary tools for kernel compilation and packaging.
-          dnf install -y git fedpkg fedora-packager rpmdevtools ncurses-devel pesign grubby \
-                         make gcc bison flex elfutils-devel openssl-devel rpm-build cpio hostname \
+          dnf install -y git make gcc bison flex elfutils-devel openssl-devel rpm-build cpio hostname \
                          dwarves openssl perl rsync
 
       - name: Clone kernel source from your fork
@@ -34,28 +32,16 @@ jobs:
           git checkout ${{ github.event.inputs.branch_name }}
           echo "Successfully cloned and checked out ${{ github.event.inputs.branch_name }} from ${{ github.event.inputs.fork_owner }}/linux"
 
-      - name: Get Official Fedora Kernel Config
-        run: |
-          # Download the official Fedora kernel source package to get its configuration
-          dnf download --source kernel
-          # Create a temporary directory to safely extract the SRPM contents
-          mkdir srpm_contents
-          cd srpm_contents
-          # Extract the entire SRPM content into the temporary directory
-          rpm2cpio ../kernel-*.src.rpm | cpio -idmv
-          # Use the correct filename 'kernel-x86_64-fedora.config'
-          cp kernel-x86_64-fedora.config ../linux/.config
-          cd ..
-          echo "Copied official Fedora kernel config to the build directory."
-
       - name: Configure Kernel
         run: |
           cd linux
-          # 'make olddefconfig' updates the .config file based on the source code,
-          # preserving the settings from the official Fedora config where possible.
-          make olddefconfig
+          # CORRECTED STRATEGY: Use 'make defconfig' to create a standard, default configuration
+          # that is compatible with the upstream source code. This avoids build errors caused by
+          # using a Fedora-specific config on a non-Fedora kernel.
+          make defconfig
+          echo "Created default kernel configuration."
 
-          # Enable AMDGPU for Southern Islands (SI) and disable the old radeon driver
+          # Now, apply your specific customizations
           echo "Enabling AMDGPU for SI cards and disabling radeon..."
           scripts/config --enable CONFIG_DRM_AMDGPU_SI
           scripts/config --disable CONFIG_DRM_RADEON_SI_SUPPORT
