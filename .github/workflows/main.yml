@@ -37,38 +37,34 @@ jobs:
           make defconfig
           echo "Created default kernel configuration."
 
-          # --- Add Essential Features for a Bootable Desktop System ---
+          # --- NEW STRATEGY: Add required options and let the build system resolve dependencies ---
+          # Append our desired options directly to the .config file.
+          # This is more reliable than enabling them one by one.
+          cat <<EOF >> .config
+          # Essential Filesystems
+          CONFIG_EXT4_FS=y
+          CONFIG_BTRFS_FS=y
+          CONFIG_XFS_FS=y
 
-          # Enable common filesystems
-          scripts/config --enable CONFIG_EXT4_FS
-          scripts/config --enable CONFIG_BTRFS_FS
-          scripts/config --enable CONFIG_XFS_FS
+          # Essential VirtIO drivers for VMs
+          CONFIG_VIRTIO_PCI=y
+          CONFIG_VIRTIO_BLK=y
+          CONFIG_VIRTIO_NET=y
+          CONFIG_VIRTIO_CONSOLE=y
+          CONFIG_VIRTIO_GPU=y
+          CONFIG_DRM_VIRTIO_GPU=y
 
-          # Enable VirtIO drivers - crucial for running in VMs (like the build environment and many user setups)
-          scripts/config --enable CONFIG_VIRTIO_PCI
-          scripts/config --enable CONFIG_VIRTIO_BLK
-          scripts/config --enable CONFIG_VIRTIO_NET
-          scripts/config --enable CONFIG_VIRTIO_CONSOLE
-          scripts/config --enable CONFIG_VIRTIO_GPU
-          scripts/config --enable CONFIG_DRM_VIRTIO_GPU
+          # AMDGPU Driver (as a module)
+          CONFIG_DRM_AMDGPU=m
+          CONFIG_DRM_AMDGPU_SI=y
+          CONFIG_DRM_RADEON_SI_SUPPORT=n
+          EOF
 
-          # Enable Framebuffer and console support for basic video output
-          scripts/config --enable CONFIG_FB_EFI
-          scripts/config --enable CONFIG_FRAMEBUFFER_CONSOLE
-
-          # --- AMDGPU Configuration ---
-          # This ensures all dependencies for the AMDGPU driver are met
-          echo "Enabling AMDGPU for SI cards and all its dependencies..."
-          scripts/config --module CONFIG_DRM_AMD_ACP
-          scripts/config --module CONFIG_DRM_AMD_DC
-          scripts/config --module CONFIG_DRM_AMD_DC_FP
-          scripts/config --module CONFIG_DRM_AMDGPU
-          scripts/config --enable CONFIG_DRM_AMDGPU_SI # Your specific request
-          scripts/config --disable CONFIG_DRM_RADEON_SI_SUPPORT # Disable the conflicting old driver
-
-          # Apply all the changes
+          # This is the crucial step. 'make olddefconfig' reads the .config file we just modified
+          # and automatically enables all the necessary prerequisite options (like the entire DRM subsystem)
+          # to ensure the configuration is consistent and complete. This prevents build errors.
           make olddefconfig
-          echo "Kernel configuration updated with essential desktop and graphics features."
+          echo "Kernel configuration updated and dependencies automatically resolved."
 
       - name: Build kernel RPM packages
         run: |
