@@ -41,8 +41,8 @@ jobs:
           cd srpm_contents
           # Extract the entire SRPM content into the temporary directory
           rpm2cpio ../kernel-*.src.rpm | cpio -idmv
-          # Now, copy the known config file from the extracted contents to your cloned source tree
-          cp kernel-x86_64.config ../linux/.config
+          # CORRECTED: Use the correct filename 'kernel-x86_64-fedora.config'
+          cp kernel-x86_64-fedora.config ../linux/.config
           cd ..
           echo "Copied official Fedora kernel config to the build directory."
 
