@@ -19,9 +19,10 @@ jobs:
     steps:
       - name: Install Build Dependencies
         run: |
+          # CORRECTED: Added 'hostname' package to the list of dependencies.
           # Install all necessary tools for kernel compilation, including git, make, gcc, and others.
           dnf install -y git fedpkg fedora-packager rpmdevtools ncurses-devel pesign grubby \
-                         make gcc bison flex elfutils-libelf-devel openssl-devel rpm-build cpio
+                         make gcc bison flex elfutils-libelf-devel openssl-devel rpm-build cpio hostname
 
       - name: Clone kernel source from your fork
         run: |
@@ -41,7 +42,7 @@ jobs:
           cd srpm_contents
           # Extract the entire SRPM content into the temporary directory
           rpm2cpio ../kernel-*.src.rpm | cpio -idmv
-          # CORRECTED: Use the correct filename 'kernel-x86_64-fedora.config'
+          # Use the correct filename 'kernel-x86_64-fedora.config'
           cp kernel-x86_64-fedora.config ../linux/.config
           cd ..
           echo "Copied official Fedora kernel config to the build directory."
