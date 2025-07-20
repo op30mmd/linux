@@ -17,12 +17,11 @@ jobs:
     runs-on: ubuntu-latest
     container: fedora:42
     steps:
-      - name: Install build dependencies
+      - name: Install Build Dependencies
         run: |
-          dnf install -y git fedpkg fedora-packager rpmdevtools ncurses-devel pesign grubby
-          # This step might fail if your fork doesn't contain Fedora's kernel.spec
-          # It's kept here for completeness if you are forking the Fedora kernel sources
-          dnf builddep -y kernel.spec || echo "kernel.spec not found, continuing without builddep."
+          # Install all necessary tools for kernel compilation, including git, make, gcc, and others.
+          dnf install -y git fedpkg fedora-packager rpmdevtools ncurses-devel pesign grubby \
+                         make gcc bison flex elfutils-libelf-devel openssl-devel rpm-build
 
       - name: Clone kernel source from your fork
         run: |
@@ -33,25 +32,35 @@ jobs:
           git checkout ${{ github.event.inputs.branch_name }}
           echo "Successfully cloned and checked out ${{ github.event.inputs.branch_name }} from ${{ github.event.inputs.fork_owner }}/linux"
 
-      - name: Configure Kernel for AMDGPU SI Support
+      - name: Get Official Fedora Kernel Config
+        run: |
+          # Download the official Fedora kernel source package to get its configuration
+          dnf download --source kernel
+          # Extract the config file from the downloaded source RPM
+          # This provides a stable base configuration that is known to work for Fedora
+          rpm2cpio kernel-*.src.rpm | cpio -idmv ./kernel-x86_64.config
+          # Copy the official config into your cloned kernel source tree
+          cp kernel-x86_64.config linux/.config
+          echo "Copied official Fedora kernel config to the build directory."
+
+      - name: Configure Kernel
         run: |
           cd linux
-          # This assumes your forked kernel has the necessary config files.
-          # 'make olddefconfig' sets up a default configuration based on the existing config files.
-          # If you are building a pure upstream kernel, you might need to start with 'make defconfig'
-          # or copy a config from /boot of a running Fedora system.
-          cp /boot/config-$(uname -r) .config || make defconfig
+          # 'make olddefconfig' updates the .config file based on the source code,
+          # preserving the settings from the official Fedora config where possible.
           make olddefconfig
 
           # Enable AMDGPU for Southern Islands (SI) and disable the old radeon driver
+          echo "Enabling AMDGPU for SI cards and disabling radeon..."
           scripts/config --enable CONFIG_DRM_AMDGPU_SI
           scripts/config --disable CONFIG_DRM_RADEON_SI_SUPPORT
+          echo "Kernel configuration updated."
 
       - name: Build kernel RPM packages
         run: |
           cd linux
-          # Using 'make binrpm-pkg' is the standard way to build an RPM from upstream kernel sources.
-          # This is more reliable than 'fedpkg' when not using the official Fedora kernel sources.
+          # Build the kernel and package it as an RPM.
+          # The -j$(nproc) flag uses all available CPU cores to speed up the build.
           make -j$(nproc) binrpm-pkg
 
       - name: Upload kernel artifacts
@@ -59,4 +68,4 @@ jobs:
         with:
           name: fedora-42-kernel-rpms-from-fork
           # The built RPMs will be in the rpmbuild directory created by the make command
-          path: ~/rpmbuild/RPMS/x86_64/
+          path: /root/rpmbuild/RPMS/x86_64/
