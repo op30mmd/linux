@@ -1,4 +1,4 @@
-name: Build Fedora 42 Kernel from Fork
+name: Build Fedora 42 Kernel from Fork (Bootable)
 
 on:
   workflow_dispatch:
@@ -25,38 +25,58 @@ jobs:
 
       - name: Clone kernel source from your fork
         run: |
-          # Clones the 'linux' repository from the GitHub user specified in the input
           git clone https://github.com/${{ github.event.inputs.fork_owner }}/linux.git
           cd linux
-          # Checks out the specific branch from your fork
           git checkout ${{ github.event.inputs.branch_name }}
           echo "Successfully cloned and checked out ${{ github.event.inputs.branch_name }} from ${{ github.event.inputs.fork_owner }}/linux"
 
-      - name: Configure Kernel
+      - name: Configure Kernel for Boot
         run: |
           cd linux
-          # Use 'make defconfig' to create a standard, default configuration
-          # that is compatible with the upstream source code.
+          # Start with a standard, default configuration
           make defconfig
           echo "Created default kernel configuration."
 
-          # Now, apply your specific customizations
-          echo "Enabling AMDGPU for SI cards and disabling radeon..."
-          scripts/config --enable CONFIG_DRM_AMDGPU_SI
-          scripts/config --disable CONFIG_DRM_RADEON_SI_SUPPORT
-          echo "Kernel configuration updated."
+          # --- Add Essential Features for a Bootable Desktop System ---
+
+          # Enable common filesystems
+          scripts/config --enable CONFIG_EXT4_FS
+          scripts/config --enable CONFIG_BTRFS_FS
+          scripts/config --enable CONFIG_XFS_FS
+
+          # Enable VirtIO drivers - crucial for running in VMs (like the build environment and many user setups)
+          scripts/config --enable CONFIG_VIRTIO_PCI
+          scripts/config --enable CONFIG_VIRTIO_BLK
+          scripts/config --enable CONFIG_VIRTIO_NET
+          scripts/config --enable CONFIG_VIRTIO_CONSOLE
+          scripts/config --enable CONFIG_VIRTIO_GPU
+          scripts/config --enable CONFIG_DRM_VIRTIO_GPU
+
+          # Enable Framebuffer and console support for basic video output
+          scripts/config --enable CONFIG_FB_EFI
+          scripts/config --enable CONFIG_FRAMEBUFFER_CONSOLE
+
+          # --- AMDGPU Configuration ---
+          # This ensures all dependencies for the AMDGPU driver are met
+          echo "Enabling AMDGPU for SI cards and all its dependencies..."
+          scripts/config --module CONFIG_DRM_AMD_ACP
+          scripts/config --module CONFIG_DRM_AMD_DC
+          scripts/config --module CONFIG_DRM_AMD_DC_FP
+          scripts/config --module CONFIG_DRM_AMDGPU
+          scripts/config --enable CONFIG_DRM_AMDGPU_SI # Your specific request
+          scripts/config --disable CONFIG_DRM_RADEON_SI_SUPPORT # Disable the conflicting old driver
+
+          # Apply all the changes
+          make olddefconfig
+          echo "Kernel configuration updated with essential desktop and graphics features."
 
       - name: Build kernel RPM packages
         run: |
           cd linux
-          # Build the kernel and package it as an RPM.
-          # The -j$(nproc) flag uses all available CPU cores to speed up the build.
           make -j$(nproc) binrpm-pkg
 
       - name: Upload kernel artifacts
         uses: actions/upload-artifact@v4
         with:
           name: fedora-42-kernel-rpms-from-fork
-          # CORRECTED: The kernel build script places the RPMs inside the source directory.
-          # This path points to the correct location within the workspace.
           path: linux/rpmbuild/RPMS/x86_64/
