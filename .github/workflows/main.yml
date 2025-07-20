@@ -1,0 +1,62 @@
+name: Build Fedora 42 Kernel from Fork
+
+on:
+  workflow_dispatch:
+    inputs:
+      fork_owner:
+        description: 'Your GitHub username or organization that owns the fork'
+        required: true
+        default: 'torvalds' # The default upstream kernel repository owner
+      branch_name:
+        description: 'The branch to build from your fork'
+        required: true
+        default: 'master' # The default upstream kernel branch
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: fedora:42
+    steps:
+      - name: Install build dependencies
+        run: |
+          dnf install -y git fedpkg fedora-packager rpmdevtools ncurses-devel pesign grubby
+          # This step might fail if your fork doesn't contain Fedora's kernel.spec
+          # It's kept here for completeness if you are forking the Fedora kernel sources
+          dnf builddep -y kernel.spec || echo "kernel.spec not found, continuing without builddep."
+
+      - name: Clone kernel source from your fork
+        run: |
+          # Clones the 'linux' repository from the GitHub user specified in the input
+          git clone https://github.com/${{ github.event.inputs.fork_owner }}/linux.git
+          cd linux
+          # Checks out the specific branch from your fork
+          git checkout ${{ github.event.inputs.branch_name }}
+          echo "Successfully cloned and checked out ${{ github.event.inputs.branch_name }} from ${{ github.event.inputs.fork_owner }}/linux"
+
+      - name: Configure Kernel for AMDGPU SI Support
+        run: |
+          cd linux
+          # This assumes your forked kernel has the necessary config files.
+          # 'make olddefconfig' sets up a default configuration based on the existing config files.
+          # If you are building a pure upstream kernel, you might need to start with 'make defconfig'
+          # or copy a config from /boot of a running Fedora system.
+          cp /boot/config-$(uname -r) .config || make defconfig
+          make olddefconfig
+
+          # Enable AMDGPU for Southern Islands (SI) and disable the old radeon driver
+          scripts/config --enable CONFIG_DRM_AMDGPU_SI
+          scripts/config --disable CONFIG_DRM_RADEON_SI_SUPPORT
+
+      - name: Build kernel RPM packages
+        run: |
+          cd linux
+          # Using 'make binrpm-pkg' is the standard way to build an RPM from upstream kernel sources.
+          # This is more reliable than 'fedpkg' when not using the official Fedora kernel sources.
+          make -j$(nproc) binrpm-pkg
+
+      - name: Upload kernel artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: fedora-42-kernel-rpms-from-fork
+          # The built RPMs will be in the rpmbuild directory created by the make command
+          path: ~/rpmbuild/RPMS/x86_64/
