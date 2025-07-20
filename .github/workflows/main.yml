@@ -21,7 +21,7 @@ jobs:
         run: |
           # Install all necessary tools for kernel compilation, including git, make, gcc, and others.
           dnf install -y git fedpkg fedora-packager rpmdevtools ncurses-devel pesign grubby \
-                         make gcc bison flex elfutils-libelf-devel openssl-devel rpm-build
+                         make gcc bison flex elfutils-libelf-devel openssl-devel rpm-build cpio
 
       - name: Clone kernel source from your fork
         run: |
@@ -36,11 +36,14 @@ jobs:
         run: |
           # Download the official Fedora kernel source package to get its configuration
           dnf download --source kernel
-          # Extract the config file from the downloaded source RPM
-          # This provides a stable base configuration that is known to work for Fedora
-          rpm2cpio kernel-*.src.rpm | cpio -idmv ./kernel-x86_64.config
-          # Copy the official config into your cloned kernel source tree
-          cp kernel-x86_64.config linux/.config
+          # Create a temporary directory to safely extract the SRPM contents
+          mkdir srpm_contents
+          cd srpm_contents
+          # Extract the entire SRPM content into the temporary directory
+          rpm2cpio ../kernel-*.src.rpm | cpio -idmv
+          # Now, copy the known config file from the extracted contents to your cloned source tree
+          cp kernel-x86_64.config ../linux/.config
+          cd ..
           echo "Copied official Fedora kernel config to the build directory."
 
       - name: Configure Kernel
@@ -68,4 +71,5 @@ jobs:
         with:
           name: fedora-42-kernel-rpms-from-fork
           # The built RPMs will be in the rpmbuild directory created by the make command
+          # The user running the build inside the container is root.
           path: /root/rpmbuild/RPMS/x86_64/
