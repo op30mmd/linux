@@ -19,7 +19,6 @@ jobs:
     steps:
       - name: Install Build Dependencies
         run: |
-          # CORRECTED: Added the 'bc' package required for the final RPM build stage.
           # Install all necessary tools for kernel compilation and packaging.
           dnf install -y git make gcc bison flex elfutils-devel openssl-devel rpm-build cpio hostname \
                          dwarves openssl perl rsync bc
@@ -58,6 +57,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: fedora-42-kernel-rpms-from-fork
-          # The built RPMs will be in the rpmbuild directory created by the make command
-          # The user running the build inside the container is root.
-          path: /root/rpmbuild/RPMS/x86_64/
+          # CORRECTED: The kernel build script places the RPMs inside the source directory.
+          # This path points to the correct location within the workspace.
+          path: linux/rpmbuild/RPMS/x86_64/
