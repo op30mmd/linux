@@ -74,3 +74,4 @@ jobs:
           # The built RPMs will be in the rpmbuild directory created by the make command
           # The user running the build inside the container is root.
           path: /root/rpmbuild/RPMS/x86_64/
+
