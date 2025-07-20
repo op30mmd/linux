@@ -19,10 +19,11 @@ jobs:
     steps:
       - name: Install Build Dependencies
         run: |
-          # CORRECTED: Added 'hostname' package to the list of dependencies.
-          # Install all necessary tools for kernel compilation, including git, make, gcc, and others.
+          # CORRECTED: Added all rpmbuild dependencies like dwarves, perl, rsync, etc.
+          # Install all necessary tools for kernel compilation and packaging.
           dnf install -y git fedpkg fedora-packager rpmdevtools ncurses-devel pesign grubby \
-                         make gcc bison flex elfutils-libelf-devel openssl-devel rpm-build cpio hostname
+                         make gcc bison flex elfutils-libelf-devel openssl-devel rpm-build cpio hostname \
+                         libdw-devel dwarves openssl perl rsync
 
       - name: Clone kernel source from your fork
         run: |
@@ -74,4 +75,3 @@ jobs:
           # The built RPMs will be in the rpmbuild directory created by the make command
           # The user running the build inside the container is root.
           path: /root/rpmbuild/RPMS/x86_64/
-
