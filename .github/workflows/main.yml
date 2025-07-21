@@ -17,11 +17,20 @@ jobs:
     runs-on: ubuntu-latest
     container: fedora:42
     steps:
+
       - name: Install Build Dependencies
         run: |
           # Install all necessary tools for kernel compilation and packaging.
           dnf install -y git make gcc bison flex elfutils-devel openssl-devel rpm-build cpio hostname \
-                         dwarves openssl perl rsync bc
+                         dwarves openssl perl rsync bc wget tar
+
+      - name: Download AMDGPU firmware
+        run: |
+          mkdir -p /lib/firmware/amdgpu
+          cd /lib/firmware/amdgpu
+          # Download the latest AMDGPU firmware tarball from kernel.org
+          wget -qO- https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/snapshot/linux-firmware-20250721.tar.gz | tar xz --strip-components=2 linux-firmware-20250721/amdgpu
+          ls -l /lib/firmware/amdgpu
 
       - name: Clone kernel source from your fork
         run: |
