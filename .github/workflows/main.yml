@@ -45,6 +45,9 @@ jobs:
           make defconfig
           echo "Created default kernel configuration."
 
+          # Generate a space-separated list of all AMDGPU firmware files
+          FIRMWARE_LIST=$(cd /lib/firmware && find amdgpu -type f -name '*.bin' | tr '\n' ' ')
+
           # Append our desired options directly to the .config file.
           cat <<EOF >> .config
           # Essential Filesystems
@@ -66,11 +69,7 @@ jobs:
           CONFIG_DRM_RADEON_SI_SUPPORT=n
 
           # --- NEW: Include Firmware ---
-          # This is critical. It tells the build process to include all firmware files
-          # found in /lib/firmware into the kernel's initramfs. This allows the amdgpu
-          # driver to load the necessary firmware for power management.
-          CONFIG_EXTRA_FIRMWARE="amdgpu"
-          CONFIG_EXTRA_FIRMWARE_DIR="/lib/firmware"
+          CONFIG_EXTRA_FIRMWARE="$FIRMWARE_LIST"
           EOF
 
           # 'make olddefconfig' reads the .config file and automatically enables
