@@ -1,3 +1,4 @@
+[![Build Fedora 42 Kernel from Fork (With Firmware)](https://github.com/op30mmd/linux/actions/workflows/main.yml/badge.svg?branch=master&event=workflow_dispatch)](https://github.com/op30mmd/linux/actions/workflows/main.yml)
 Linux kernel
 ============
 
