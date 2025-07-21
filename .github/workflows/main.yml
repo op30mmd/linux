@@ -37,40 +37,49 @@ jobs:
           cd linux
           git checkout ${{ github.event.inputs.branch_name }}
           
-          # Apply patch to fix SI DPM clock speed issues
+          # Create patch to fix SI DPM clock speed issues
           cat << 'EOF' > si_dpm_fix.patch
           diff --git a/drivers/gpu/drm/amd/pm/legacy-dpm/si_dpm.c b/drivers/gpu/drm/amd/pm/legacy-dpm/si_dpm.c
           index xxxxxxx..xxxxxxx 100644
           --- a/drivers/gpu/drm/amd/pm/legacy-dpm/si_dpm.c
           +++ b/drivers/gpu/drm/amd/pm/legacy-dpm/si_dpm.c
-          @@ -5668,6 +5668,10 @@ static int si_set_power_state_conditionally_enable_ulv(struct amdgpu_device *adev,
+          @@ -67,7 +67,7 @@
+          #include "smu/smu_6_0_d.h"
+          #include "smu/smu_6_0_sh_mask.h"
+          
+          -#define SCLK_MIN_DEEPSLEEP_FREQ     1350
+          +#define SCLK_MIN_DEEPSLEEP_FREQ     0
+          
+          #define MC_CG_ARB_FREQ_F0           0x0a
+          #define MC_CG_ARB_FREQ_F1           0x0b
+          @@ -5668,11 +5668,16 @@ static int si_set_power_state_conditionally_enable_ulv(struct amdgpu_device *adev,
                                                      struct amdgpu_ps *amdgpu_new_state)
           {
               const struct si_power_info *si_pi = si_get_pi(adev);
           +    /* Don't enable ULV during high performance 3D workloads */
-          +    if (amdgpu_new_state->class & AMDGPU_PP_CLASS_PERFORMANCE)
+          +    if (amdgpu_new_state->class & (AMDGPU_PP_CLASS_PERFORMANCE |
+          +                                   AMDGPU_PP_CLASS_COMPUTE))
           +        return 0;
           +
               const struct si_ulv_param *ulv = &si_pi->ulv;
           
               if (ulv->supported) {
-          @@ -1234,7 +1234,7 @@ static int si_calculate_sclk_params(struct amdgpu_device *adev,
+                  if (si_is_state_ulv_compatible(adev, amdgpu_new_state))
+          -            return (amdgpu_si_send_msg_to_smc(adev, PPSMC_MSG_EnableULV) == PPSMC_Result_OK) ?
+          +            return ((adev->pm.no_display ||
+          +                    amdgpu_si_send_msg_to_smc(adev, PPSMC_MSG_EnableULV) == PPSMC_Result_OK)) ?
+                              0 : -EINVAL;
               }
-          
-              /* Adjust minimum clock for deep sleep state */
-          -    if (sclk < SCLK_MIN_DEEPSLEEP_FREQ)
-          -        sclk = SCLK_MIN_DEEPSLEEP_FREQ;
-          +    /* Remove minimum deep sleep frequency limit for better power savings */
-          +    /* Allow the hardware to manage deep sleep frequency dynamically */
-          
               return 0;
-          }
           EOF
           
           # Apply the patch
-          patch -p1 < si_dpm_fix.patch
+          patch -p1 < si_dpm_fix.patch || {
+            echo "Failed to apply patch. This might be because the changes are already present."
+            exit 1
+          }
           
-          echo "Successfully cloned, checked out ${{ github.event.inputs.branch_name }} from ${{ github.event.inputs.fork_owner }}/linux and applied SI DPM fix"
+          echo "Successfully cloned and patched kernel source"
 
       - name: Configure Kernel for Boot
         run: |
@@ -82,31 +91,28 @@ jobs:
           # Generate a space-separated list of all AMDGPU firmware files
           FIRMWARE_LIST=$(cd /lib/firmware && find amdgpu -type f -name '*.bin' | tr '\n' ' ')
 
-          # Patch the config for AMDGPU SI, disable radeon, and include all firmware
-          echo "# AMDGPU SI and DPM" >> .config
-          # Build AMDGPU into the kernel, not as a module for better performance
-          echo "CONFIG_DRM_AMDGPU=y" >> .config
-          echo "CONFIG_DRM_AMDGPU_SI=y" >> .config
-          echo "CONFIG_DRM_AMDGPU_CIK=y" >> .config
-          echo "CONFIG_DRM_AMDGPU_USERPTR=y" >> .config
-          echo "CONFIG_DRM_AMDGPU_DC=y" >> .config
-          echo "CONFIG_DRM_AMDGPU_SDMA_TRAP=y" >> .config
-          echo "CONFIG_DRM_AMD_DC_SI=y" >> .config
-          # Disable radeon completely
-          echo "CONFIG_DRM_RADEON=n" >> .config
-          echo "CONFIG_DRM_RADEON_SI_SUPPORT=n" >> .config
-          echo "CONFIG_DRM_RADEON_CIK_SUPPORT=n" >> .config
-          # Disable error checking for better performance
-          echo "CONFIG_DRM_AMDGPU_WERROR=n" >> .config
-          # Power management and monitoring
-          echo "CONFIG_PM=y" >> .config
-          echo "CONFIG_PM_RUNTIME=y" >> .config
-          echo "CONFIG_HWMON=y" >> .config
-          echo "CONFIG_DRM_AMD_DC_FBC=y" >> .config
-          echo "CONFIG_HSA_AMD=y" >> .config
-          echo "CONFIG_PERF_EVENTS_AMD_POWER=y" >> .config
-          # Memory management optimizations
-          echo "CONFIG_HSA_AMD_SVM=y" >> .config
+          # Configure AMDGPU SI with optimized settings
+          cat << 'EOF' >> .config
+          # AMD GPU Configuration
+          CONFIG_DRM_AMDGPU=y
+          CONFIG_DRM_AMDGPU_SI=y
+          CONFIG_DRM_AMDGPU_CIK=y
+          CONFIG_DRM_AMDGPU_USERPTR=y
+          CONFIG_DRM_AMDGPU_DC=y
+          CONFIG_DRM_AMDGPU_SDMA_TRAP=y
+          CONFIG_DRM_AMD_DC_SI=y
+          # Disable radeon driver
+          CONFIG_DRM_RADEON=n
+          CONFIG_DRM_RADEON_SI_SUPPORT=n
+          CONFIG_DRM_RADEON_CIK_SUPPORT=n
+          # Performance optimizations
+          CONFIG_DRM_AMDGPU_WERROR=n
+          CONFIG_PM=y
+          CONFIG_PM_RUNTIME=y
+          CONFIG_HWMON=y
+          CONFIG_DRM_AMD_DC_FBC=y
+          CONFIG_PERF_EVENTS_AMD_POWER=y
+          EOF
           echo "# Include all AMDGPU firmware" >> .config
           echo "CONFIG_EXTRA_FIRMWARE=\"$FIRMWARE_LIST\"" >> .config
 
