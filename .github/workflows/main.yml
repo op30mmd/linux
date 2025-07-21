@@ -34,7 +34,7 @@ jobs:
 
       - name: Clone kernel source from your fork
         run: |
-          git clone https://github.com/${{ github.event.inputs.fork_owner }}/linux.git
+          git clone --depth=1 https://github.com/${{ github.event.inputs.fork_owner }}/linux.git
           cd linux
           git checkout ${{ github.event.inputs.branch_name }}
           echo "Successfully cloned and checked out ${{ github.event.inputs.branch_name }} from ${{ github.event.inputs.fork_owner }}/linux"
