@@ -1,4 +1,4 @@
-name: Build Fedora 42 Kernel from Fork (Bootable)
+name: Build Fedora 42 Kernel from Fork (With Firmware)
 
 on:
   workflow_dispatch:
@@ -6,7 +6,7 @@ on:
       fork_owner:
         description: 'Your GitHub username or organization that owns the fork'
         required: true
-        default: 'op30mmd' # The default upstream kernel repository owner
+        default: 'torvalds' # The default upstream kernel repository owner
       branch_name:
         description: 'The branch to build from your fork'
         required: true
@@ -37,9 +37,7 @@ jobs:
           make defconfig
           echo "Created default kernel configuration."
 
-          # --- NEW STRATEGY: Add required options and let the build system resolve dependencies ---
           # Append our desired options directly to the .config file.
-          # This is more reliable than enabling them one by one.
           cat <<EOF >> .config
           # Essential Filesystems
           CONFIG_EXT4_FS=y
@@ -58,11 +56,17 @@ jobs:
           CONFIG_DRM_AMDGPU=m
           CONFIG_DRM_AMDGPU_SI=y
           CONFIG_DRM_RADEON_SI_SUPPORT=n
+
+          # --- NEW: Include Firmware ---
+          # This is critical. It tells the build process to include all firmware files
+          # found in /lib/firmware into the kernel's initramfs. This allows the amdgpu
+          # driver to load the necessary firmware for power management.
+          CONFIG_EXTRA_FIRMWARE="amdgpu"
+          CONFIG_EXTRA_FIRMWARE_DIR="/lib/firmware"
           EOF
 
-          # This is the crucial step. 'make olddefconfig' reads the .config file we just modified
-          # and automatically enables all the necessary prerequisite options (like the entire DRM subsystem)
-          # to ensure the configuration is consistent and complete. This prevents build errors.
+          # 'make olddefconfig' reads the .config file and automatically enables
+          # all necessary prerequisite options to ensure the configuration is consistent.
           make olddefconfig
           echo "Kernel configuration updated and dependencies automatically resolved."
 
