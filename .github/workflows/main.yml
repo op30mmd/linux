@@ -41,41 +41,42 @@ jobs:
       - name: Configure Kernel for Boot
         run: |
           cd linux
-          # Start with a standard, default configuration
-          make defconfig
-          echo "Created default kernel configuration."
+          # Download the full Fedora config for x86_64
+          curl -L -o .config https://src.fedoraproject.org/rpms/kernel/raw/rawhide/f/kernel-x86_64-fedora.config
+          echo "Downloaded Fedora kernel config."
 
           # Generate a space-separated list of all AMDGPU firmware files
           FIRMWARE_LIST=$(cd /lib/firmware && find amdgpu -type f -name '*.bin' | tr '\n' ' ')
 
-          # Append our desired options directly to the .config file.
-          cat <<EOF >> .config
-          # Essential Filesystems
-          CONFIG_EXT4_FS=y
-          CONFIG_BTRFS_FS=y
-          CONFIG_XFS_FS=y
+          # Patch the config for AMDGPU SI, disable radeon, and include all firmware
+          echo "# AMDGPU SI and DPM" >> .config
+          echo "CONFIG_DRM_AMDGPU=m" >> .config
+          echo "CONFIG_DRM_AMDGPU_SI=y" >> .config
+          echo "CONFIG_DRM_AMDGPU_CIK=y" >> .config
+          echo "CONFIG_DRM_AMDGPU_USERPTR=y" >> .config
+          echo "CONFIG_DRM_RADEON=n" >> .config
+          echo "CONFIG_DRM_RADEON_SI_SUPPORT=n" >> .config
+          echo "CONFIG_DRM_RADEON_CIK_SUPPORT=n" >> .config
+          echo "CONFIG_DRM_AMDGPU_WERROR=n" >> .config
+          echo "CONFIG_PM=y" >> .config
+          echo "CONFIG_PM_RUNTIME=y" >> .config
+          echo "CONFIG_HWMON=y" >> .config
+          echo "# Include all AMDGPU firmware" >> .config
+          echo "CONFIG_EXTRA_FIRMWARE=\"$FIRMWARE_LIST\"" >> .config
 
-          # Essential VirtIO drivers for VMs
-          CONFIG_VIRTIO_PCI=y
-          CONFIG_VIRTIO_BLK=y
-          CONFIG_VIRTIO_NET=y
-          CONFIG_VIRTIO_CONSOLE=y
-          CONFIG_VIRTIO_GPU=y
-          CONFIG_DRM_VIRTIO_GPU=y
-
-          # AMDGPU Driver (as a module)
-          CONFIG_DRM_AMDGPU=m
-          CONFIG_DRM_AMDGPU_SI=y
-          CONFIG_DRM_RADEON_SI_SUPPORT=n
-
-          # --- NEW: Include Firmware ---
-          CONFIG_EXTRA_FIRMWARE="$FIRMWARE_LIST"
-          EOF
-
-          # 'make olddefconfig' reads the .config file and automatically enables
-          # all necessary prerequisite options to ensure the configuration is consistent.
+          # Apply config changes
           make olddefconfig
           echo "Kernel configuration updated and dependencies automatically resolved."
+
+          # Blacklist radeon and set kernel parameters for SI DPM
+          echo 'blacklist radeon' | tee /etc/modprobe.d/blacklist-radeon.conf
+          echo 'options amdgpu si_support=1 cik_support=1' | tee /etc/modprobe.d/amdgpu.conf
+          echo 'options radeon si_support=0 cik_support=0' | tee /etc/modprobe.d/radeon.conf
+
+          # Add kernel command line for GitHub Actions test VMs (if needed)
+          if [ -f /etc/default/grub ]; then
+            sed -i 's/GRUB_CMDLINE_LINUX="/GRUB_CMDLINE_LINUX="amdgpu.si_support=1 radeon.si_support=0 modprobe.blacklist=radeon /' /etc/default/grub
+          fi
 
 
       - name: Build kernel RPM packages
