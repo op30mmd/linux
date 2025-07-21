@@ -6,7 +6,7 @@ on:
       fork_owner:
         description: 'Your GitHub username or organization that owns the fork'
         required: true
-        default: 'torvalds' # The default upstream kernel repository owner
+        default: 'op30mmd' # The default upstream kernel repository owner
       branch_name:
         description: 'The branch to build from your fork'
         required: true
