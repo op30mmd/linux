@@ -3860,29 +3860,36 @@ static int si_dpm_force_performance_level(void *handle,
 	struct  si_ps *ps = si_get_ps(rps);
 	u32 levels = ps->performance_level_count;
 
-	if (level == AMD_DPM_FORCED_LEVEL_HIGH) {
-		if (si_send_msg_to_smc_with_parameter(adev, PPSMC_MSG_SetEnabledLevels, levels) != PPSMC_Result_OK)
-			return -EINVAL;
+   if (level == AMD_DPM_FORCED_LEVEL_HIGH) {
+	   /* Force all levels enabled, set forced level to highest, and disable auto-throttle */
+	   if (si_send_msg_to_smc_with_parameter(adev, PPSMC_MSG_SetEnabledLevels, levels) != PPSMC_Result_OK)
+		   return -EINVAL;
+	   if (si_send_msg_to_smc_with_parameter(adev, PPSMC_MSG_SetForcedLevels, 1) != PPSMC_Result_OK)
+		   return -EINVAL;
+	   /* Disable all auto-throttle sources */
+	   si_enable_auto_throttle_source(adev, SI_DPM_AUTO_THROTTLE_SRC_THERMAL, false);
+	   si_enable_auto_throttle_source(adev, SI_DPM_AUTO_THROTTLE_SRC_EXTERNAL, false);
+   } else if (level == AMD_DPM_FORCED_LEVEL_LOW) {
+	   if (si_send_msg_to_smc_with_parameter(adev, PPSMC_MSG_SetForcedLevels, 0) != PPSMC_Result_OK)
+		   return -EINVAL;
+	   if (si_send_msg_to_smc_with_parameter(adev, PPSMC_MSG_SetEnabledLevels, 1) != PPSMC_Result_OK)
+		   return -EINVAL;
+	   /* Re-enable auto-throttle sources */
+	   si_enable_auto_throttle_source(adev, SI_DPM_AUTO_THROTTLE_SRC_THERMAL, true);
+	   si_enable_auto_throttle_source(adev, SI_DPM_AUTO_THROTTLE_SRC_EXTERNAL, true);
+   } else if (level == AMD_DPM_FORCED_LEVEL_AUTO) {
+	   if (si_send_msg_to_smc_with_parameter(adev, PPSMC_MSG_SetForcedLevels, 0) != PPSMC_Result_OK)
+		   return -EINVAL;
+	   if (si_send_msg_to_smc_with_parameter(adev, PPSMC_MSG_SetEnabledLevels, levels) != PPSMC_Result_OK)
+		   return -EINVAL;
+	   /* Re-enable auto-throttle sources */
+	   si_enable_auto_throttle_source(adev, SI_DPM_AUTO_THROTTLE_SRC_THERMAL, true);
+	   si_enable_auto_throttle_source(adev, SI_DPM_AUTO_THROTTLE_SRC_EXTERNAL, true);
+   }
 
-		if (si_send_msg_to_smc_with_parameter(adev, PPSMC_MSG_SetForcedLevels, 1) != PPSMC_Result_OK)
-			return -EINVAL;
-	} else if (level == AMD_DPM_FORCED_LEVEL_LOW) {
-		if (si_send_msg_to_smc_with_parameter(adev, PPSMC_MSG_SetForcedLevels, 0) != PPSMC_Result_OK)
-			return -EINVAL;
+   adev->pm.dpm.forced_level = level;
 
-		if (si_send_msg_to_smc_with_parameter(adev, PPSMC_MSG_SetEnabledLevels, 1) != PPSMC_Result_OK)
-			return -EINVAL;
-	} else if (level == AMD_DPM_FORCED_LEVEL_AUTO) {
-		if (si_send_msg_to_smc_with_parameter(adev, PPSMC_MSG_SetForcedLevels, 0) != PPSMC_Result_OK)
-			return -EINVAL;
-
-		if (si_send_msg_to_smc_with_parameter(adev, PPSMC_MSG_SetEnabledLevels, levels) != PPSMC_Result_OK)
-			return -EINVAL;
-	}
-
-	adev->pm.dpm.forced_level = level;
-
-	return 0;
+   return 0;
 }
 
 #if 0
