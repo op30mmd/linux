@@ -5671,10 +5671,15 @@ static int si_set_power_state_conditionally_enable_ulv(struct amdgpu_device *ade
 	const struct si_ulv_param *ulv = &si_pi->ulv;
 
 	/* Don't enable ULV during high performance 3D workloads */
-	if (ulv->supported && !(amdgpu_new_state->class & AMDGPU_PP_CLASS_PERFORMANCE)) {
+	if (amdgpu_new_state->class & (AMDGPU_PP_CLASS_PERFORMANCE |
+					AMDGPU_PP_CLASS_COMPUTE))
+		return 0;
+
+	if (ulv->supported) {
 		if (si_is_state_ulv_compatible(adev, amdgpu_new_state))
-			return (amdgpu_si_send_msg_to_smc(adev, PPSMC_MSG_EnableULV) == PPSMC_Result_OK) ?
-				0 : -EINVAL;
+			return ((adev->pm.no_display ||
+					 amdgpu_si_send_msg_to_smc(adev, PPSMC_MSG_EnableULV) == PPSMC_Result_OK)) ?
+							  0 : -EINVAL;
 	}
 	return 0;
 }
