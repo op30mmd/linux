@@ -88,9 +88,6 @@ jobs:
           curl -L -o .config https://src.fedoraproject.org/rpms/kernel/raw/rawhide/f/kernel-x86_64-fedora.config
           echo "Downloaded Fedora kernel config."
 
-          # Generate a space-separated list of all AMDGPU firmware files
-          FIRMWARE_LIST=$(cd /lib/firmware && find amdgpu -type f -name '*.bin' | tr '\n' ' ')
-
           # Configure AMDGPU SI with optimized settings
           cat << 'EOF' >> .config
           # AMD GPU Configuration
@@ -114,21 +111,17 @@ jobs:
           CONFIG_PERF_EVENTS_AMD_POWER=y
           EOF
           echo "# Include all AMDGPU firmware" >> .config
-          echo "CONFIG_EXTRA_FIRMWARE=\"$FIRMWARE_LIST\"" >> .config
+          echo "CONFIG_EXTRA_FIRMWARE_DIR=/lib/firmware" >> .config
+          echo "CONFIG_EXTRA_FIRMWARE=\"\$(shell find /lib/firmware/amdgpu -type f -name '*.bin' | sed 's,/lib/firmware/,,')\"" >> .config
 
           # Apply config changes
           make olddefconfig
           echo "Kernel configuration updated and dependencies automatically resolved."
 
-          # Blacklist radeon and set kernel parameters for SI DPM
-          echo 'blacklist radeon' | tee /etc/modprobe.d/blacklist-radeon.conf
+          # Set kernel parameters for SI DPM
           echo 'options amdgpu si_support=1 cik_support=1' | tee /etc/modprobe.d/amdgpu.conf
           echo 'options radeon si_support=0 cik_support=0' | tee /etc/modprobe.d/radeon.conf
 
-          # Add kernel command line for GitHub Actions test VMs (if needed)
-          if [ -f /etc/default/grub ]; then
-            sed -i 's/GRUB_CMDLINE_LINUX="/GRUB_CMDLINE_LINUX="amdgpu.si_support=1 radeon.si_support=0 modprobe.blacklist=radeon /' /etc/default/grub
-          fi
 
 
       - name: Build kernel RPM packages
