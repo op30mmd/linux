@@ -3488,7 +3488,7 @@ static void si_apply_state_adjust_rules(struct amdgpu_device *adev,
 		} else if (adev->pdev->revision == 0x87 &&
 				adev->pdev->device == 0x6611) {
 			/* Radeon 430 and 520 */
-			max_sclk = 78000;
+			max_sclk = 100000;
 		}
 	}
 
@@ -3569,6 +3569,18 @@ static void si_apply_state_adjust_rules(struct amdgpu_device *adev,
 							&max_mclk_vddci);
 	btc_get_max_clock_from_voltage_dependency_table(&adev->pm.dpm.dyn_state.vddc_dependency_on_mclk,
 							&max_mclk_vddc);
+
+	/* Ensure voltage dependency tables cover OD clocks for R7 430 (Oland rev 0x87) */
+	if (adev->asic_type == CHIP_OLAND &&
+	    adev->pdev->revision == 0x87 &&
+	    adev->pdev->device == 0x6611) {
+		if (max_sclk_vddc < 100000)
+			max_sclk_vddc = 100000;
+		if (max_mclk_vddc < 130000)
+			max_mclk_vddc = 130000;
+		if (max_mclk_vddci < 130000)
+			max_mclk_vddci = 130000;
+	}
 
 	for (i = 0; i < ps->performance_level_count; i++) {
 		if (max_sclk_vddc) {
@@ -7267,6 +7279,14 @@ static void si_parse_pplib_clock_info(struct amdgpu_device *adev,
 							&leakage_voltage);
 	if (ret == 0)
 		pl->vddc = leakage_voltage;
+
+	/* Override OD operating point for UI_PERFORMANCE levels (R7 430) */
+	if ((rps->class & ATOM_PPLIB_CLASSIFICATION_UI_MASK) ==
+	    ATOM_PPLIB_CLASSIFICATION_UI_PERFORMANCE) {
+		pl->sclk = 100000;            /* 1000 MHz, 10 KHz units */
+		pl->mclk = 130000;            /* 1300 MHz, 10 KHz units */
+		pl->vddc = 1150;              /* mV, from GPU-Z */
+	}
 
 	if (rps->class & ATOM_PPLIB_CLASSIFICATION_ACPI) {
 		pi->acpi_vddc = pl->vddc;
