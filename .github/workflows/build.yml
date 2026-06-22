@@ -1,0 +1,133 @@
+name: Build patched amdgpu kernel (Ubuntu 26.04 LTS)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write          # required to create releases + tags
+
+env:
+  LOCALVERSION: -amdgpu-od
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:26.04    # guarantees the build runs against Ubuntu 26.04 LTS
+    timeout-minutes: 330
+    steps:
+      - name: Install git (so checkout can persist credentials)
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates curl
+
+      - name: Checkout kernel source (this repo, already patched)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install toolchain & build deps
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential bc bison flex cpio kmod rsync zstd xz-utils \
+            libssl-dev libelf-dev libncurses-dev dwarves \
+            fakeroot debhelper
+          # GitHub CLI publishes the release; fall back to the upstream apt repo
+          apt-get install -y --no-install-recommends gh || {
+            install -m 0755 -d /usr/share/keyrings
+            curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+              -o /usr/share/keyrings/githubcli-archive-keyring.gpg
+            chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+              > /etc/apt/sources.list.d/github-cli.list
+            apt-get update
+            apt-get install -y gh
+          }
+
+      - name: Configure the kernel (in-workflow)
+        run: |
+          make defconfig          # sane x86_64 base
+          # ---- correctness: the AF_UNIX fix that stops the systemd boot freeze ----
+          ./scripts/config --enable  UNIX
+          # ---- graphics: Oland dGPU (amdgpu / SI) + Haswell iGPU (i915) ----
+          ./scripts/config --module  DRM_AMDGPU
+          ./scripts/config --enable  DRM_AMDGPU_SI
+          ./scripts/config --enable  DRM_AMDGPU_CIK
+          ./scripts/config --enable  DRM_AMD_DC_SI
+          ./scripts/config --module  DRM_I915
+          ./scripts/config --enable  DRM_FBDEV_EMULATION
+          ./scripts/config --enable  FRAMEBUFFER_CONSOLE
+          # ---- storage (built-in to avoid initramfs surprises) ----
+          ./scripts/config --enable  SATA_AHCI
+          ./scripts/config --enable  ATA_PIIX
+          ./scripts/config --enable  SCSI
+          ./scripts/config --enable  BLK_DEV_SD
+          ./scripts/config --enable  BLK_DEV_NVME
+          ./scripts/config --enable  BLK_DEV_INITRD
+          # ---- filesystems ----
+          ./scripts/config --enable  EXT4_FS
+          ./scripts/config --enable  VFAT_FS
+          ./scripts/config --enable  FAT_FS
+          ./scripts/config --enable  NLS_CODEPAGE_437
+          ./scripts/config --enable  NLS_ISO8859_1
+          # ---- EFI boot ----
+          ./scripts/config --enable  EFI
+          ./scripts/config --enable  EFI_STUB
+          ./scripts/config --enable  EFIVAR_FS
+          # ---- USB input (keyboard / mouse) ----
+          ./scripts/config --enable  USB
+          ./scripts/config --enable  USB_XHCI_HCD
+          ./scripts/config --enable  USB_EHCI_HCD
+          ./scripts/config --enable  USB_HID
+          ./scripts/config --enable  HID_GENERIC
+          # ---- NICs commonly fitted to the HP ProDesk 600 G1 ----
+          ./scripts/config --module  E1000E
+          ./scripts/config --module  R8169
+          # ---- systemd prerequisites ----
+          ./scripts/config --enable  CGROUPS
+          ./scripts/config --enable  AUTOFS_FS
+          ./scripts/config --enable  FANOTIFY
+          ./scripts/config --enable  FHANDLE
+          ./scripts/config --enable  SECCOMP
+          # ---- CI build hygiene (avoid the usual Actions breakers) ----
+          ./scripts/config --disable MODULE_SIG
+          ./scripts/config --disable MODULE_SIG_ALL
+          ./scripts/config --set-str SYSTEM_TRUSTED_KEYS ""
+          ./scripts/config --set-str SYSTEM_REVOCATION_KEYS ""
+          ./scripts/config --disable DEBUG_INFO
+          ./scripts/config --disable DEBUG_INFO_DWARF5
+          ./scripts/config --disable DEBUG_INFO_BTF
+          ./scripts/config --set-str LOCALVERSION "$LOCALVERSION"
+          ./scripts/config --disable LOCALVERSION_AUTO
+          make olddefconfig       # resolve dependencies non-interactively
+          echo "=== sanity check ==="
+          grep -E '^(CONFIG_UNIX|CONFIG_DRM_AMDGPU_SI|CONFIG_DRM_AMDGPU|CONFIG_DRM_I915|CONFIG_BLK_DEV_NVME)=' .config
+
+      - name: Build .deb packages
+        run: |
+          make -j"$(nproc)" bindeb-pkg LOCALVERSION="$LOCALVERSION"
+          mkdir -p out
+          mv ../*.deb out/ 2>/dev/null || true
+          ls -lh out
+
+      - name: Publish release with automatic tag
+        run: |
+          set -euo pipefail
+          TAG="kernel-$(date -u +%Y%m%d-%H%M)-r${GITHUB_RUN_NUMBER}"
+          # Recover the token actions/checkout stored, so gh can authenticate
+          # without a templated secret expression.
+          HDR="$(git config --get http.https://github.com/.extraheader || true)"
+          TOKEN="$(printf '%s' "$HDR" | awk '{print $3}' | base64 -d 2>/dev/null | cut -d: -f2- || true)"
+          if [ -z "$TOKEN" ]; then
+            echo "::error::Could not recover the build token from checkout credentials (is persist-credentials enabled?)."
+            exit 1
+          fi
+          export GH_TOKEN="$TOKEN"
+          gh release create "$TAG" out/*.deb \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Patched amdgpu kernel ($TAG)" \
+            --notes "Automated build on the Ubuntu 26.04 LTS toolchain. Install with: sudo dpkg -i linux-image-*.deb linux-headers-*.deb && sudo reboot"
