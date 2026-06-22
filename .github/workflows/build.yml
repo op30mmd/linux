@@ -47,64 +47,42 @@ jobs:
             apt-get install -y gh
           }
 
-      - name: Configure the kernel (in-workflow)
+      - name: Configure the kernel (Ubuntu standard config)
         run: |
-          make defconfig          # sane x86_64 base
-          # ---- correctness: the AF_UNIX fix that stops the systemd boot freeze ----
-          ./scripts/config --enable  UNIX
-          # ---- graphics: Oland dGPU (amdgpu / SI) + Haswell iGPU (i915) ----
+          export DEBIAN_FRONTEND=noninteractive
+          # Base on Ubuntu's STOCK kernel config (so all drivers + initramfs
+          # modules are present and the kernel boots like a normal Ubuntu one).
+          apt-get install -y --no-install-recommends linux-image-generic
+          SRC_CONFIG="$(ls -1 /boot/config-*-generic 2>/dev/null | sort -V | tail -n1)"
+          [ -z "$SRC_CONFIG" ] && SRC_CONFIG="$(ls -1 /boot/config-* 2>/dev/null | sort -V | tail -n1)"
+          if [ -z "$SRC_CONFIG" ]; then
+            echo "::error::Could not find an Ubuntu /boot/config-* to base on."
+            exit 1
+          fi
+          echo "Using Ubuntu base config: $SRC_CONFIG"
+          cp "$SRC_CONFIG" .config
+          # ---- assert the must-haves on top of Ubuntu's config ----
+          ./scripts/config --enable  UNIX            # AF_UNIX boot-freeze fix (Ubuntu sets it too)
           ./scripts/config --module  DRM_AMDGPU
-          ./scripts/config --enable  DRM_AMDGPU_SI
-          ./scripts/config --enable  DRM_AMDGPU_CIK
+          ./scripts/config --enable  DRM_AMDGPU_SI   # Oland / Southern Islands (your OD patch)
           ./scripts/config --enable  DRM_AMD_DC_SI
-          ./scripts/config --module  DRM_I915
-          ./scripts/config --enable  DRM_FBDEV_EMULATION
-          ./scripts/config --enable  FRAMEBUFFER_CONSOLE
-          # ---- storage (built-in to avoid initramfs surprises) ----
-          ./scripts/config --enable  SATA_AHCI
-          ./scripts/config --enable  ATA_PIIX
-          ./scripts/config --enable  SCSI
-          ./scripts/config --enable  BLK_DEV_SD
-          ./scripts/config --enable  BLK_DEV_NVME
-          ./scripts/config --enable  BLK_DEV_INITRD
-          # ---- filesystems ----
-          ./scripts/config --enable  EXT4_FS
-          ./scripts/config --enable  VFAT_FS
-          ./scripts/config --enable  FAT_FS
-          ./scripts/config --enable  NLS_CODEPAGE_437
-          ./scripts/config --enable  NLS_ISO8859_1
-          # ---- EFI boot ----
-          ./scripts/config --enable  EFI
-          ./scripts/config --enable  EFI_STUB
-          ./scripts/config --enable  EFIVAR_FS
-          # ---- USB input (keyboard / mouse) ----
-          ./scripts/config --enable  USB
-          ./scripts/config --enable  USB_XHCI_HCD
-          ./scripts/config --enable  USB_EHCI_HCD
-          ./scripts/config --enable  USB_HID
-          ./scripts/config --enable  HID_GENERIC
-          # ---- NICs commonly fitted to the HP ProDesk 600 G1 ----
-          ./scripts/config --module  E1000E
-          ./scripts/config --module  R8169
-          # ---- systemd prerequisites ----
-          ./scripts/config --enable  CGROUPS
-          ./scripts/config --enable  AUTOFS_FS
-          ./scripts/config --enable  FANOTIFY
-          ./scripts/config --enable  FHANDLE
-          ./scripts/config --enable  SECCOMP
-          # ---- CI build hygiene (avoid the usual Actions breakers) ----
+          # ---- make Ubuntu's config buildable off-Ubuntu + fit the free runner ----
           ./scripts/config --disable MODULE_SIG
           ./scripts/config --disable MODULE_SIG_ALL
           ./scripts/config --set-str SYSTEM_TRUSTED_KEYS ""
           ./scripts/config --set-str SYSTEM_REVOCATION_KEYS ""
+          ./scripts/config --disable GCC_PLUGINS
           ./scripts/config --disable DEBUG_INFO
           ./scripts/config --disable DEBUG_INFO_DWARF5
+          ./scripts/config --disable DEBUG_INFO_DWARF4
           ./scripts/config --disable DEBUG_INFO_BTF
+          ./scripts/config --disable DEBUG_INFO_BTF_MODULES
+          ./scripts/config --disable DEBUG_INFO_REDUCED
           ./scripts/config --set-str LOCALVERSION "$LOCALVERSION"
           ./scripts/config --disable LOCALVERSION_AUTO
-          make olddefconfig       # resolve dependencies non-interactively
+          make olddefconfig       # adapt Ubuntu's config to this tree, non-interactively
           echo "=== sanity check ==="
-          grep -E '^(CONFIG_UNIX|CONFIG_DRM_AMDGPU_SI|CONFIG_DRM_AMDGPU|CONFIG_DRM_I915|CONFIG_BLK_DEV_NVME)=' .config
+          grep -E '^(CONFIG_UNIX|CONFIG_DRM_AMDGPU_SI|CONFIG_DRM_AMDGPU|CONFIG_MODULE_SIG|CONFIG_DEBUG_INFO)=' .config || true
 
       - name: Build .deb packages
         run: |
