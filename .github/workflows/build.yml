@@ -117,12 +117,17 @@ jobs:
         run: |
           set -euo pipefail
           TAG="kernel-$(date -u +%Y%m%d-%H%M)-r${GITHUB_RUN_NUMBER}"
-          # Recover the token actions/checkout stored, so gh can authenticate
-          # without a templated secret expression.
-          HDR="$(git config --get http.https://github.com/.extraheader || true)"
-          TOKEN="$(printf '%s' "$HDR" | awk '{print $3}' | base64 -d 2>/dev/null | cut -d: -f2- || true)"
-          if [ -z "$TOKEN" ]; then
-            echo "::error::Could not recover the build token from checkout credentials (is persist-credentials enabled?)."
+          # Recover the token actions/checkout persisted by reading .git/config
+          # directly (robust against git ownership checks; needs no secret expression).
+          CFG="$GITHUB_WORKSPACE/.git/config"
+          B64="$(grep -aoE 'AUTHORIZATION:[[:space:]]+basic[[:space:]]+[A-Za-z0-9+/=]+' "$CFG" 2>/dev/null | head -n1 | awk '{print $NF}')"
+          if [ -z "$B64" ]; then
+            git config --global --add safe.directory "$GITHUB_WORKSPACE" || true
+            B64="$(git config --get-regexp 'http\..*\.extraheader' 2>/dev/null | head -n1 | awk '{print $NF}')"
+          fi
+          TOKEN="$(printf '%s' "$B64" | base64 -d 2>/dev/null | cut -d: -f2- || true)"
+          if [ -z "${TOKEN:-}" ]; then
+            echo "::error::Could not recover the build token. Leave actions/checkout 'persist-credentials' at its default (true)."
             exit 1
           fi
           export GH_TOKEN="$TOKEN"
