@@ -7280,12 +7280,19 @@ static void si_parse_pplib_clock_info(struct amdgpu_device *adev,
 	if (ret == 0)
 		pl->vddc = leakage_voltage;
 
-	/* Override OD operating point for UI_PERFORMANCE levels (R7 430) */
+	/* Override OD operating point for UI_PERFORMANCE levels (R7 430).
+	 * Only lift the TOP performance level so DPM can still idle
+	 * down. The stock top level sits at the ~750 MHz Oland cap; the
+	 * lower DPM levels (~300/450/625 MHz) MUST be left untouched,
+	 * or every level collapses to 1000 MHz and the GPU never
+	 * downclocks at idle (confirmed via amdgpu_pm_info). */
 	if ((rps->class & ATOM_PPLIB_CLASSIFICATION_UI_MASK) ==
 	    ATOM_PPLIB_CLASSIFICATION_UI_PERFORMANCE) {
-		pl->sclk = 100000;            /* 1000 MHz, 10 KHz units */
-		pl->mclk = 130000;            /* 1300 MHz, 10 KHz units */
-		pl->vddc = 1150;              /* mV, from GPU-Z */
+		if (pl->sclk >= 70000) {
+			pl->sclk = 100000;        /* 1000 MHz, 10 KHz units */
+			pl->mclk = 130000;        /* 1300 MHz, 10 KHz units */
+			pl->vddc = 1150;          /* mV, from GPU-Z */
+		}
 	}
 
 	if (rps->class & ATOM_PPLIB_CLASSIFICATION_ACPI) {
