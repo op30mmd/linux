@@ -34,7 +34,7 @@ jobs:
           apt-get install -y --no-install-recommends \
             build-essential bc bison flex cpio kmod rsync zstd xz-utils \
             libssl-dev libelf-dev libdw-dev libncurses-dev dwarves \
-            python3 lsb-release dh-exec fakeroot debhelper
+            python3 lsb-release dh-exec fakeroot debhelper gawk
           # GitHub CLI publishes the release; fall back to the upstream apt repo
           apt-get install -y --no-install-recommends gh || {
             install -m 0755 -d /usr/share/keyrings
