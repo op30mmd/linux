@@ -352,7 +352,7 @@ static void query_dp_dual_mode_adaptor(
 		}
 		if (retry_count == 0) {
 			*dongle = DISPLAY_DONGLE_DP_DVI_DONGLE;
-			sink_cap->max_hdmi_pixel_clock = DP_ADAPTOR_DVI_MAX_TMDS_CLK;
+			sink_cap->max_hdmi_pixel_clock = DP_ADAPTOR_HDMI_SAFE_MAX_TMDS_CLK; /* 340000 */
 
 			CONN_DATA_DETECT(link, type2_dongle_buf, sizeof(type2_dongle_buf),
 					"DP-DVI passive dongle %dMhz: ",
