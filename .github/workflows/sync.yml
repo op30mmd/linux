@@ -1,0 +1,48 @@
+name: Sync Upstream Linux
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'
+  
+  # Allows you to trigger the workflow manually from the GitHub Actions UI
+  workflow_dispatch:
+
+# Ensure the action has permission to push commits to your repository
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout local fork
+        uses: actions/checkout@v4
+        with:
+          # Required to fetch full history so Git can find a common ancestor for the merge.
+          fetch-depth: 0
+          ref: master
+
+      - name: Configure Git identity
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/torvalds/linux.git
+
+      - name: Fetch upstream changes
+        run: |
+          git fetch upstream master
+
+      - name: Merge upstream into fork
+        run: |
+          # This merges upstream/master into your current branch.
+          # If there are no conflicts, it creates a merge commit preserving your changes.
+          # If there ARE conflicts, this command fails, stopping the workflow safely.
+          git merge upstream/master --no-edit
+
+      - name: Push changes to fork
+        run: |
+          git push origin master
